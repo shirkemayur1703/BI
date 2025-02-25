@@ -28,6 +28,10 @@ permissions:
   external:
     frames:
       - '*'
+    fetch:
+      backend:
+        - 'https://api.first.org'
+    
 app:
   runtime:
     name: nodejs22.x
