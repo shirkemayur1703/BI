@@ -1,0 +1,34 @@
+modules:
+  jira:dashboardGadget:
+    - key: equbebi-dashboard-gadget
+      title: eQube-BI Dashboard
+      description: An eQube-BI dashboard gadget.
+      thumbnail: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
+      resource: main
+      resolver:
+        function: resolver
+      edit:
+        resource: main
+  function:
+    - key: resolver
+      handler: index.handler
+resources:
+  - key: main
+    path: static/eQube-BI/build
+    tunnel:
+      port: 3000
+permissions:
+  content:
+    styles:
+      - unsafe-inline
+    scripts:
+      - 'unsafe-inline'
+  scopes:
+    - storage:app
+  external:
+    frames:
+      - '*'
+app:
+  runtime:
+    name: nodejs22.x
+  id: ari:cloud:ecosystem::app/8c3bbde2-f0d3-4ecb-b8ff-2b60a0e1b8a3
