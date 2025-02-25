@@ -18,6 +18,10 @@ const selectStyles = {
       overflowY: 'auto', 
     }),
   };
+
+  const spinnerStyles = {
+    display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' 
+  }
   
-  export { selectStyles };
+  export { selectStyles,spinnerStyles };
   
