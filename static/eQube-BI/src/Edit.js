@@ -3,9 +3,9 @@ import Form, { Field } from '@atlaskit/form';
 import TextField from '@atlaskit/textfield';
 import Select from '@atlaskit/select';
 import Button, { ButtonGroup } from '@atlaskit/button';
-import Spinner from '@atlaskit/spinner'; // Import Spinner
+import Spinner from '@atlaskit/spinner'; 
 import { invoke, view } from '@forge/bridge';
-import { selectStyles } from './Styles'; // Import styles
+import { selectStyles } from './Styles'; 
 
 function Edit() {
   const [initialData, setInitialData] = useState({
@@ -16,7 +16,7 @@ function Edit() {
 
   const [countries, setCountries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [fetchingConfig, setFetchingConfig] = useState(true); // Track config loading state
+  const [fetchingConfig, setFetchingConfig] = useState(true); 
 
   useEffect(() => {
     const fetchStoredConfig = async () => {
@@ -99,7 +99,7 @@ function Edit() {
                     options={loading ? [{ label: 'Loading...', value: '' }] : countries}
                     isClearable
                     menuPortalTarget={document.body} 
-                    styles={selectStyles} // Apply styles
+                    styles={selectStyles} 
                   />
                 )}
               </Field>
@@ -114,7 +114,7 @@ function Edit() {
                     ]}
                     isClearable
                     menuPortalTarget={document.body}  
-                    styles={selectStyles} // Apply styles
+                    styles={selectStyles} 
                   />
                 )}
               </Field>
