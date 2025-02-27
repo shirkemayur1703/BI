@@ -1,47 +1,173 @@
-# Forge eQube-BI Dashboard
+import React, { useEffect, useState, useCallback } from 'react';
+import Form, { Field } from '@atlaskit/form';
+import TextField from '@atlaskit/textfield';
+import Select from '@atlaskit/select';
+import Button, { ButtonGroup } from '@atlaskit/button';
+import Spinner from '@atlaskit/spinner'; 
+import { invoke, view } from '@forge/bridge';
+import { selectStyles, spinnerStyles } from './Styles'; 
 
-This project contains a Forge app written in JavaScript that displays eQube-BI Dashboard in a Jira dashboard gadget.
+function Edit() {
+  const [defaultValues, setDefaultValues] = useState({
+    baseUrl: '',
+    title: null, 
+    action: null,
+  });
 
-See [developer.atlassian.com/platform/forge/](https://developer.atlassian.com/platform/forge) for documentation and tutorials explaining Forge.
+  const [countries, setCountries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchingConfig, setFetchingConfig] = useState(true);
+  const [iframeSrc, setIframeSrc] = useState('');
 
-## Requirements
+  // Memoized function to fetch stored config
+  const fetchStoredConfig = useCallback(async () => {
+    setFetchingConfig(true);
+    const storedConfig = await invoke('getStoredConfig');
 
-See [Set up Forge](https://developer.atlassian.com/platform/forge/set-up-forge/) for instructions to get set up.
+    if (storedConfig) {
+      setDefaultValues({
+        baseUrl: storedConfig.baseUrl || '',
+        title: storedConfig.title ? { label: storedConfig.title, value: storedConfig.title } : null,
+        action: storedConfig.action ? { label: storedConfig.action, value: storedConfig.action } : null,
+      });
+    }
+    setFetchingConfig(false);
+  }, []);
 
-## Quick start
-- Install top-level dependencies:
-```
-npm install
-```
+  // Memoized function to fetch countries
+  const fetchCountries = useCallback(async () => {
+    try {
+      const countryOptions = await invoke('getCountries');
+      setCountries(countryOptions);
+    } catch (error) {
+      setCountries([{ label: 'No Countries Found', value: '' }]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-- Install dependencies (inside of the `static/hello-world` directory):
-```
-npm install
-```
+  useEffect(() => {
+    fetchStoredConfig();
+    fetchCountries();
+  }, [fetchStoredConfig, fetchCountries]);
 
-- Modify your app by editing the files in `static/eQube-BI/src/`.
+  // Function to handle messages from the login page
+  const handleTicketMessage = useCallback((event) => {
+    if (!defaultValues.baseUrl || !event.origin.includes(defaultValues.baseUrl)) {
+      console.warn('Received message from untrusted origin:', event.origin);
+      return;
+    }
 
-- Build your app (inside of the `static/eQube-BI` directory):
-```
-npm run build
-```
+    const { ticket } = event.data;
+    if (ticket) {
+      console.log('Received Ticket:', ticket);
+      
+      // Update the iframe to show the dashboard with the ticket
+      const dashboardUrl = `${defaultValues.baseUrl}/dashboard?ticket=${ticket}`;
+      setIframeSrc(dashboardUrl);
 
-- Deploy your app by running:
-```
-forge deploy
-```
+      // Remove event listener after receiving the ticket
+      window.removeEventListener('message', handleTicketMessage);
+    }
+  }, [defaultValues.baseUrl]);
 
-- Install your app in an Atlassian site by running:
-```
-forge install
-```
+  useEffect(() => {
+    window.addEventListener('message', handleTicketMessage);
+    return () => {
+      window.removeEventListener('message', handleTicketMessage);
+    };
+  }, [handleTicketMessage]);
 
-### Notes
-- Use the `forge deploy` command when you want to persist code changes.
-- Use the `forge install` command when you want to install the app on a new site.
-- Once the app is installed on a site, the site picks up the new app changes you deploy without needing to rerun the install command.
+  const onSubmit = async (formData) => {
+    const { baseUrl, title, action } = formData;
+    let generatedUrl = `${baseUrl}`;
 
-## Support
+    const params = new URLSearchParams();
+    if (title) params.append('title', title.value);
+    if (action) params.append('action', action.value);
 
-See [Get help](https://developer.atlassian.com/platform/forge/get-help/) for how to get help and provide feedback.
+    if (params.toString()) {
+      generatedUrl += `?${params.toString()}`;
+    }
 
+    // Store the config in Forge storage
+    await invoke('setStoredConfig', {
+      baseUrl,
+      title: title ? title.value : '',
+      action: action ? action.value : '',
+      generatedUrl,
+    });
+
+    view.submit({ generatedUrl });
+
+    // Open the login page in a new tab
+    const loginUrl = `${baseUrl}/service/initiatelogin`;
+    window.open(loginUrl, '_blank');
+  };
+
+  return (
+    <>
+      {fetchingConfig ? (
+        <div style={spinnerStyles}>
+          <Spinner size="large" />
+        </div>
+      ) : (
+        <>
+          <Form onSubmit={onSubmit}>
+            {({ formProps, submitting }) => (
+              <form {...formProps}>
+                <Field name="baseUrl" label="Base URL" isRequired defaultValue={defaultValues.baseUrl}>
+                  {({ fieldProps }) => <TextField {...fieldProps} />}
+                </Field>
+                
+                <Field name="title" label="Title" defaultValue={defaultValues.title}>
+                  {({ fieldProps }) => (
+                    <Select
+                      {...fieldProps}
+                      options={loading ? [{ label: 'Loading...', value: '' }] : countries}
+                      isClearable
+                      menuPortalTarget={document.body} 
+                      styles={selectStyles} 
+                    />
+                  )}
+                </Field>
+
+                <Field name="action" label="Action" defaultValue={defaultValues.action}>
+                  {({ fieldProps }) => (
+                    <Select
+                      {...fieldProps}
+                      options={[
+                        { label: 'History', value: 'history' },
+                        { label: 'Future', value: 'future' },
+                      ]}
+                      isClearable
+                      menuPortalTarget={document.body}  
+                      styles={selectStyles} 
+                    />
+                  )}
+                </Field>
+
+                <br />
+                <ButtonGroup>
+                  <Button type="submit" isDisabled={submitting}>
+                    Load Dashboard
+                  </Button>
+                  <Button appearance="subtle" onClick={view.close}>
+                    Cancel
+                  </Button>
+                </ButtonGroup>
+              </form>
+            )}
+          </Form>
+
+          {/* Iframe to show dashboard after login */}
+          {iframeSrc && (
+            <iframe src={iframeSrc} width="100%" height="600px" title="Dashboard" />
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
+export default Edit;
