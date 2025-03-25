@@ -19,24 +19,19 @@ function Edit() {
   const [defaultHeight, setDefaultHeight] = useState(null);
   const [fieldDisabled, setFieldDisabled] = useState(false);
   const [buttonDisabled, setButtonDisabled] = useState(false);
-  const [isTokenSet, setIsTokenSet] = useState(false);
-  const [configReady, setConfigReady] = useState(false);
 
-  // Fetch stored config once on mount
   const fetchStoredConfig = useCallback(async () => {
     try {
       const confs = await invoke("getConfigurations");
       const storedBaseUrl = await invoke("getBaseUrl");
-      setDefaultBaseURL(storedBaseUrl?.payload || "");
+      const storedReport = confs.report;
+      const storedProject = confs.project;
+      const storedHeight = confs.height;
 
-      setDefaultReport(confs.report ? { label: confs.report.label, value: confs.report.value } : null);
-      setDefaultHeight(confs.height || "");
-
-      if (confs.project) {
-        setDefaultProject(
-          Object.keys(confs.project).length ? { label: confs.project, value: confs.project } : { label: "", value: "" }
-        );
-      }
+      if (storedBaseUrl) setDefaultBaseURL(storedBaseUrl.payload);
+      if (storedReport) setDefaultReport(storedReport);
+      if (storedProject) setDefaultProject({ label: storedProject, value: storedProject });
+      if (storedHeight) setDefaultHeight(storedHeight);
     } catch (error) {
       console.error("Error fetching stored config:", error);
     }
@@ -46,72 +41,45 @@ function Edit() {
     fetchStoredConfig();
   }, [fetchStoredConfig]);
 
-  // Fetch projects when authToken is available
+  // Reset authToken & reports when baseUrl changes
+  useEffect(() => {
+    if (!baseUrl) return;
+    setAuthToken("");
+    setReports([]);
+    setFieldDisabled(false);
+    setButtonDisabled(false);
+  }, [baseUrl]);
+
   useEffect(() => {
     if (!authToken) return;
     invoke("getProjects")
-      .then(setProjects)
+      .then((data) => setProjects(data))
       .catch((error) => {
         console.error("Error fetching projects:", error);
         setProjects([]);
       });
   }, [authToken]);
 
-  const projectOptions = useMemo(() => projects.map((project) => ({
-    value: project.name,
-    label: project.name,
-  })), [projects]);
+  const projectOptions = useMemo(
+    () => projects.map((project) => ({ value: project.name, label: project.name })),
+    [projects]
+  );
 
-  const reportOptions = useMemo(() => [
-    {
-      label: "Reports",
-      options: reports.filter((report) => report.reportType === "Report").map((report) => ({
-        value: report.id,
-        label: report.entityName,
-      })),
-    },
-    {
-      label: "Snapshots",
-      options: reports.filter((report) => report.reportType === "Snapshot").map((report) => ({
-        value: report.id,
-        label: report.entityName,
-      })),
-    },
-  ], [reports]);
+  const reportOptions = useMemo(
+    () => [
+      { label: "Reports", options: reports.filter(r => r.reportType === "Report").map(r => ({ value: r.id, label: r.entityName })) },
+      { label: "Snapshots", options: reports.filter(r => r.reportType === "Snapshot").map(r => ({ value: r.id, label: r.entityName })) }
+    ],
+    [reports]
+  );
 
-  const getReportList = async () => {
+  const getReportList = async (baseUrl) => {
+    if (!authToken) return;
     try {
-      console.log("Fetching reports with ticket:", authToken);
       const response = await fetch(`${baseUrl}/webpart/reportConfig`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Requested-With": "XMLHttpRequest",
-          ticket: authToken,
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          SubscriptionType: "",
-          alerts: "",
-          categories: [],
-          connection: "",
-          creationDateType: "Day",
-          cubeName: "",
-          date1: "",
-          date2: "",
-          dateFormat: "",
-          dimensionName: "",
-          id: "SearchCriteriaWidget",
-          lastNDays: "",
-          layout: {},
-          measureName: "",
-          name: "",
-          owner: "",
-          pages: "",
-          reportType: [],
-          searchType: "Report",
-          type: "SearchCriteriaWidget",
-        }),
+        headers: { "Content-Type": "application/json", ticket: authToken },
+        body: JSON.stringify({ searchType: "Report", type: "SearchCriteriaWidget" }),
       });
       const data = await response.json();
       setReports(data.reportList.report.sort((a, b) => a.entityName.localeCompare(b.entityName)));
@@ -120,30 +88,33 @@ function Edit() {
     }
   };
 
-  // Ensure reports are fetched only when both authToken & baseUrl are updated together
   useEffect(() => {
-    if (authToken && baseUrl) {
-      setConfigReady(true);
-    } else {
-      setConfigReady(false);
-    }
+    if (authToken && baseUrl) getReportList(baseUrl);
   }, [authToken, baseUrl]);
 
   useEffect(() => {
-    if (configReady) {
-      getReportList();
-    }
-  }, [configReady]);
+    view.getContext().then((ctx) => {
+      const ctxTicket = ctx.extension.gadgetConfiguration?.ticket;
+      const ctxBaseUrl = ctx.extension.gadgetConfiguration?.baseUrl;
+      if (ctxBaseUrl) setBaseUrl(ctxBaseUrl);
+      if (ctxTicket) {
+        setAuthToken(ctxTicket);
+        setFieldDisabled(true);
+        setButtonDisabled(true);
+      }
+    });
+  }, []);
 
-  const handleLogin = async (formData) => {
-    const { inputUrl } = formData;
+  const handleLogin = async ({ inputUrl }) => {
     if (!inputUrl) return;
-
     if (baseUrl === inputUrl) {
       setFieldDisabled(true);
       setButtonDisabled(true);
       return;
     }
+    
+    setBaseUrl(inputUrl);
+    await invoke("setBaseUrl", inputUrl);
 
     const modal = new Modal({
       resource: "modal",
@@ -157,36 +128,22 @@ function Edit() {
       size: "max",
       context: { baseUrl: inputUrl },
     });
-
     modal.open();
-    setBaseUrl(inputUrl);
-    await invoke("setBaseUrl", inputUrl);
   };
 
-  const saveConfigs = async (formData) => {
-    const { report, project, height } = formData;
-    const reportID = report.value;
-    const matchingReport = reports.find((r) => r.id === reportID);
-    let reportType = matchingReport?.reportType || "";
-
+  const saveConfigs = async ({ report, project, height }) => {
+    if (!report) return;
+    let reportID = report.value;
+    let reportType = reports.find(r => r.id === reportID)?.reportType;
     let url = `${baseUrl}/integration?reportId=${reportID}&reportType=${reportType}`;
 
-    if (project && project.value) {
+    if (project && project.value !== "") {
       url += `&filters=FilterFVE_1&FilterFVE_1_column=Project&FilterFVE_1_operator==&FilterFVE_1_values=${project.value}`;
     }
 
-    await invoke("setConfigurations", {
-      project: project ? project.value : null,
-      report: report ? { label: report.label, value: report.value } : {},
-      height: height || "",
-    });
+    await invoke("setConfigurations", { project: project?.value, report, height });
 
     view.submit({ generatedUrl: url, ticket: authToken, height, baseUrl });
-  };
-
-  const handleEditClick = () => {
-    setFieldDisabled(false);
-    setButtonDisabled(false);
   };
 
   return (
@@ -198,12 +155,16 @@ function Edit() {
               {({ fieldProps }) => (
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <TextField {...fieldProps} isDisabled={fieldDisabled} />
-                  {fieldDisabled && <IconButton icon={EditIcon} label="Edit" onClick={handleEditClick} />}
+                  {fieldDisabled && (
+                    <IconButton icon={EditIcon} label="Edit" onClick={() => { setFieldDisabled(false); setButtonDisabled(false); }} />
+                  )}
                 </div>
               )}
             </Field>
             <HelperMessage>eQube-BI Context URL</HelperMessage>
-            {!buttonDisabled && <Button type="submit" isDisabled={submitting} style={buttonStyles}>Login</Button>}
+            {!buttonDisabled && (
+              <Button type="submit" isDisabled={submitting} style={buttonStyles}>Login</Button>
+            )}
           </form>
         )}
       </Form>
@@ -213,10 +174,13 @@ function Edit() {
           {({ formProps, submitting }) => (
             <form {...formProps}>
               <Field name="report" label="Report Name" isRequired defaultValue={defaultReport}>
-                {({ fieldProps }) => <Select {...fieldProps} options={reportOptions} isClearable styles={selectStyles} isSearchable />}
+                {({ fieldProps }) => <Select {...fieldProps} options={reportOptions} styles={selectStyles} />}
               </Field>
               <Field name="project" label="Project" defaultValue={defaultProject}>
-                {({ fieldProps }) => <Select {...fieldProps} options={projectOptions} isClearable styles={selectStyles} isSearchable />}
+                {({ fieldProps }) => <Select {...fieldProps} options={projectOptions} styles={selectStyles} />}
+              </Field>
+              <Field name="height" label="Height" isRequired defaultValue={defaultHeight}>
+                {({ fieldProps }) => <TextField {...fieldProps} type="number" placeholder="Report Container Height" />}
               </Field>
               <Button type="submit" isDisabled={submitting} style={buttonStyles}>Save</Button>
             </form>
