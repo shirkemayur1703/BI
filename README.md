@@ -19,7 +19,10 @@ function Edit() {
   const [defaultHeight, setDefaultHeight] = useState(null);
   const [fieldDisabled, setFieldDisabled] = useState(false);
   const [buttonDisabled, setButtonDisabled] = useState(false);
+  const [isTokenSet, setIsTokenSet] = useState(false);
+  const [mode, setMode] = useState("initialLogin"); // Tracks login/relogin/reconfigure modes
 
+  // Fetch stored configurations (baseUrl, report, project, height)
   const fetchStoredConfig = useCallback(async () => {
     try {
       const confs = await invoke("getConfigurations");
@@ -28,10 +31,26 @@ function Edit() {
       const storedProject = confs.project;
       const storedHeight = confs.height;
 
-      if (storedBaseUrl) setDefaultBaseURL(storedBaseUrl.payload);
-      if (storedReport) setDefaultReport(storedReport);
-      if (storedProject) setDefaultProject({ label: storedProject, value: storedProject });
-      if (storedHeight) setDefaultHeight(storedHeight);
+      if (storedBaseUrl) {
+        setDefaultBaseURL(storedBaseUrl.payload);
+        setBaseUrl(storedBaseUrl.payload); // Set baseUrl for reconfigure mode
+      }
+
+      if (storedReport) {
+        setDefaultReport({ label: storedReport.label, value: storedReport.value });
+      }
+
+      if (storedHeight) {
+        setDefaultHeight(storedHeight);
+      }
+
+      if (storedProject) {
+        setDefaultProject(
+          Object.keys(storedProject).length === 0
+            ? { label: "", value: "" }
+            : { label: storedProject, value: storedProject }
+        );
+      }
     } catch (error) {
       console.error("Error fetching stored config:", error);
     }
@@ -41,15 +60,7 @@ function Edit() {
     fetchStoredConfig();
   }, [fetchStoredConfig]);
 
-  // Reset authToken & reports when baseUrl changes
-  useEffect(() => {
-    if (!baseUrl) return;
-    setAuthToken("");
-    setReports([]);
-    setFieldDisabled(false);
-    setButtonDisabled(false);
-  }, [baseUrl]);
-
+  // Fetch Jira projects when authToken is available
   useEffect(() => {
     if (!authToken) return;
     invoke("getProjects")
@@ -60,61 +71,78 @@ function Edit() {
       });
   }, [authToken]);
 
-  const projectOptions = useMemo(
-    () => projects.map((project) => ({ value: project.name, label: project.name })),
-    [projects]
-  );
+  const projectOptions = useMemo(() => projects.map((p) => ({ value: p.name, label: p.name })), [projects]);
 
-  const reportOptions = useMemo(
-    () => [
-      { label: "Reports", options: reports.filter(r => r.reportType === "Report").map(r => ({ value: r.id, label: r.entityName })) },
-      { label: "Snapshots", options: reports.filter(r => r.reportType === "Snapshot").map(r => ({ value: r.id, label: r.entityName })) }
-    ],
-    [reports]
-  );
+  // Fetch reports when baseUrl & authToken are set
+  useEffect(() => {
+    if (authToken && baseUrl) {
+      getReportList(baseUrl);
+    }
+  }, [authToken, baseUrl]);
 
+  // Fetch reports
   const getReportList = async (baseUrl) => {
-    if (!authToken) return;
     try {
+      console.log("Fetching reports with ticket:", authToken);
+
       const response = await fetch(`${baseUrl}/webpart/reportConfig`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ticket: authToken },
-        body: JSON.stringify({ searchType: "Report", type: "SearchCriteriaWidget" }),
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+          ticket: authToken,
+        },
+        credentials: "include",
+        body: JSON.stringify({ searchType: "Report" }),
       });
+
       const data = await response.json();
-      setReports(data.reportList.report.sort((a, b) => a.entityName.localeCompare(b.entityName)));
+      const sortedReports = data.reportList.report.sort((a, b) => a.entityName.localeCompare(b.entityName));
+      setReports(sortedReports);
     } catch (error) {
       console.error("Error fetching reports:", error);
     }
   };
 
-  useEffect(() => {
-    if (authToken && baseUrl) getReportList(baseUrl);
-  }, [authToken, baseUrl]);
-
+  // Get context when switching from view → edit
   useEffect(() => {
     view.getContext().then((ctx) => {
+      console.log("Context in edit:", ctx);
       const ctxTicket = ctx.extension.gadgetConfiguration?.ticket;
       const ctxBaseUrl = ctx.extension.gadgetConfiguration?.baseUrl;
-      if (ctxBaseUrl) setBaseUrl(ctxBaseUrl);
+
       if (ctxTicket) {
         setAuthToken(ctxTicket);
-        setFieldDisabled(true);
         setButtonDisabled(true);
+        setFieldDisabled(true);
+        setIsTokenSet(true);
+        setMode("reconfigure"); // Set mode to reconfigure
+      }
+
+      if (ctxBaseUrl) {
+        setBaseUrl(ctxBaseUrl);
       }
     });
   }, []);
 
-  const handleLogin = async ({ inputUrl }) => {
+  // Handle when user clicks "Edit" to change Base URL
+  const handleEditClick = () => {
+    setAuthToken(""); // Clear token to force re-login
+    setFieldDisabled(false);
+    setButtonDisabled(false);
+    setMode("relogin"); // Set mode to relogin
+  };
+
+  // Handle login (initial/relogin)
+  const handleLogin = async (formData) => {
+    const { inputUrl } = formData;
     if (!inputUrl) return;
+
     if (baseUrl === inputUrl) {
       setFieldDisabled(true);
       setButtonDisabled(true);
       return;
     }
-    
-    setBaseUrl(inputUrl);
-    await invoke("setBaseUrl", inputUrl);
 
     const modal = new Modal({
       resource: "modal",
@@ -123,27 +151,16 @@ function Edit() {
           setAuthToken(payload);
           setFieldDisabled(true);
           setButtonDisabled(true);
+          setMode("reconfigure"); // Switch to reconfigure mode after login
         }
       },
       size: "max",
       context: { baseUrl: inputUrl },
     });
+
     modal.open();
-  };
-
-  const saveConfigs = async ({ report, project, height }) => {
-    if (!report) return;
-    let reportID = report.value;
-    let reportType = reports.find(r => r.id === reportID)?.reportType;
-    let url = `${baseUrl}/integration?reportId=${reportID}&reportType=${reportType}`;
-
-    if (project && project.value !== "") {
-      url += `&filters=FilterFVE_1&FilterFVE_1_column=Project&FilterFVE_1_operator==&FilterFVE_1_values=${project.value}`;
-    }
-
-    await invoke("setConfigurations", { project: project?.value, report, height });
-
-    view.submit({ generatedUrl: url, ticket: authToken, height, baseUrl });
+    setBaseUrl(inputUrl);
+    await invoke("setBaseUrl", inputUrl);
   };
 
   return (
@@ -155,32 +172,24 @@ function Edit() {
               {({ fieldProps }) => (
                 <div style={{ display: "flex", alignItems: "center" }}>
                   <TextField {...fieldProps} isDisabled={fieldDisabled} />
-                  {fieldDisabled && (
-                    <IconButton icon={EditIcon} label="Edit" onClick={() => { setFieldDisabled(false); setButtonDisabled(false); }} />
-                  )}
+                  {fieldDisabled && <IconButton icon={EditIcon} label="Edit" onClick={handleEditClick} />}
                 </div>
               )}
             </Field>
-            <HelperMessage>eQube-BI Context URL</HelperMessage>
-            {!buttonDisabled && (
-              <Button type="submit" isDisabled={submitting} style={buttonStyles}>Login</Button>
-            )}
+            {!buttonDisabled && <Button type="submit" isDisabled={submitting} style={buttonStyles}>Login</Button>}
           </form>
         )}
       </Form>
 
       {authToken && (
-        <Form onSubmit={saveConfigs}>
+        <Form onSubmit={() => console.log("Save Config")}>
           {({ formProps, submitting }) => (
             <form {...formProps}>
               <Field name="report" label="Report Name" isRequired defaultValue={defaultReport}>
-                {({ fieldProps }) => <Select {...fieldProps} options={reportOptions} styles={selectStyles} />}
+                {({ fieldProps }) => <Select {...fieldProps} options={[]} styles={selectStyles} isSearchable />}
               </Field>
               <Field name="project" label="Project" defaultValue={defaultProject}>
-                {({ fieldProps }) => <Select {...fieldProps} options={projectOptions} styles={selectStyles} />}
-              </Field>
-              <Field name="height" label="Height" isRequired defaultValue={defaultHeight}>
-                {({ fieldProps }) => <TextField {...fieldProps} type="number" placeholder="Report Container Height" />}
+                {({ fieldProps }) => <Select {...fieldProps} options={projectOptions} styles={selectStyles} isSearchable />}
               </Field>
               <Button type="submit" isDisabled={submitting} style={buttonStyles}>Save</Button>
             </form>
