@@ -1,39 +1,67 @@
-it("renders only the input field and login button when no context is available", async () => {
-  // Mock `view.getContext` to return no ticket or baseUrl
+it("logs in, sets ticket and baseUrl, disables input, fetches reports and projects, and shows fields", async () => {
+  // Mock `view.getContext` to return no ticket initially
   view.getContext.mockResolvedValue({ extension: { gadgetConfiguration: {} } });
 
-  // Mock `invoke("getConfigurations")` to return stored config
+  // Mock stored configurations to be fetched after login
   const mockStoredConfig = {
     report: { label: "Report 1", value: "1" },
     project: "Project A",
     height: "500",
   };
-  invoke.mockResolvedValueOnce(mockStoredConfig);
+  invoke.mockResolvedValueOnce(mockStoredConfig); // Mock getConfigurations call
 
-  // Mock `invoke("getBaseUrl")` to return a stored baseUrl
-  invoke.mockResolvedValueOnce({ payload: "https://example.com" });
+  // Mock stored baseUrl
+  invoke.mockResolvedValueOnce({ payload: "https://example.com" }); // getBaseUrl
 
+  // Mock reports list fetched after login
+  const mockReports = [
+    { id: "1", entityName: "Report 1", reportType: "Report" },
+    { id: "2", entityName: "Snapshot 1", reportType: "Snapshot" },
+  ];
+  global.fetch = jest.fn(() =>
+    Promise.resolve({
+      json: () => Promise.resolve({ reportList: { report: mockReports } }),
+    })
+  );
+
+  // Mock projects fetched after login
+  const mockProjects = [{ name: "Project A" }, { name: "Project B" }];
+  invoke.mockResolvedValueOnce(mockProjects); // Mock getProjects call
+
+  // Render the component
   render(<Edit />);
 
-  // Ensure `getContext` was called but returned empty
-  await waitFor(() => expect(view.getContext).toHaveBeenCalled());
+  // Ensure baseUrl is fetched and displayed in input
+  await waitFor(() => expect(screen.getByDisplayValue("https://example.com")).toBeInTheDocument());
 
-  // Ensure stored baseUrl is fetched
-  await waitFor(() => expect(invoke).toHaveBeenCalledWith("getBaseUrl"));
+  // Click login button to open modal
+  fireEvent.click(screen.getByRole("button", { name: "Login" }));
 
-  // Verify the input field displays the stored baseUrl
-  expect(screen.getByDisplayValue("https://example.com")).toBeInTheDocument();
+  // Simulate modal returning a ticket
+  await act(async () => {
+    Modal.mock.instances[0].onClose("mocked-ticket");
+  });
 
-  // Verify the login button is present
-  expect(screen.getByRole("button", { name: "Login" })).toBeInTheDocument();
+  // Ensure authToken is set and baseUrl is stored
+  await waitFor(() => expect(invoke).toHaveBeenCalledWith("setBaseUrl", "https://example.com"));
 
-  // Ensure reports and projects dropdowns are NOT present
-  expect(screen.queryByLabelText("Report Name")).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Project")).not.toBeInTheDocument();
+  // Ensure input field and login button are disabled
+  expect(screen.getByDisplayValue("https://example.com")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Login" })).toBeDisabled();
 
-  // Ensure height input field is NOT present
-  expect(screen.queryByLabelText("Height")).not.toBeInTheDocument();
+  // Ensure reports are fetched and displayed in dropdown
+  await waitFor(() => expect(screen.getByText("Report 1")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText("Snapshot 1")).toBeInTheDocument());
 
-  // Ensure save button is NOT present
-  expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+  // Ensure projects are fetched and displayed
+  await waitFor(() => expect(screen.getByText("Project A")).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText("Project B")).toBeInTheDocument());
+
+  // Ensure default values for report, project, height are set
+  expect(screen.getByText("Report 1")).toBeInTheDocument();
+  expect(screen.getByText("Project A")).toBeInTheDocument();
+  expect(screen.getByDisplayValue("500")).toBeInTheDocument();
+
+  // Ensure save button is shown
+  expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
 });
