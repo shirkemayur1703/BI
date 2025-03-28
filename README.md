@@ -1,58 +1,49 @@
 import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { act } from "react-dom/test-utils";
-import Edit from "../Edit";
-import { invoke } from "@forge/bridge";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { invoke, view } from "@forge/bridge";
+import Edit from "../Edit"; // Adjust the path as needed
 
-jest.mock("@forge/bridge", () => ({
-  invoke: jest.fn(),
-}));
+jest.mock("@forge/bridge");
 
-describe("Edit Component - Save Button", () => {
+describe("Edit Component - Fetch Stored Context", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  test("calls setConfigurations with correct data when save is clicked", async () => {
-    // Mock stored configurations
-    const mockConfigurations = {
+  test("should fetch stored context, set authToken, fetch reports, and disable login elements", async () => {
+    // Mock stored context data
+    const storedContext = {
+      ticket: "mocked-ticket",
       baseUrl: "https://example.com",
-      project: "Project A",
-      report: "Report 1",
-      height: "600",
     };
 
+    view.getContext.mockResolvedValue(storedContext);
+
+    // Mock report fetching
+    const mockReports = [
+      { id: "1", entityName: "Report 1", reportType: "Report" },
+      { id: "2", entityName: "Snapshot 1", reportType: "Snapshot" },
+    ];
     invoke.mockImplementation((method) => {
-      if (method === "getConfigurations") {
-        return Promise.resolve(mockConfigurations);
-      }
-      if (method === "setConfigurations") {
-        return Promise.resolve("Success");
-      }
+      if (method === "getReports") return Promise.resolve(mockReports);
+      return Promise.resolve(null);
     });
 
-    // Render the component
     render(<Edit />);
 
-    // Wait for default values to be set
+    // Wait for fetchContext to complete
     await waitFor(() => {
-      expect(screen.getByLabelText("eQube-BI URL")).toHaveValue("https://example.com");
-      expect(screen.getByText("Project A")).toBeInTheDocument();
-      expect(screen.getByText("Report 1")).toBeInTheDocument();
-      expect(screen.getByLabelText("Height")).toHaveValue("600");
+      expect(view.getContext).toHaveBeenCalled();
+      expect(invoke).toHaveBeenCalledWith("getReports", expect.any(Object));
     });
 
-    // Click Save button
-    fireEvent.click(screen.getByRole("button", { name: /Save/i }));
+    // Check if stored data is set in the UI
+    expect(screen.getByRole("textbox", { name: /eQube-BI URL/i })).toHaveValue("https://example.com");
+    expect(screen.getByRole("button", { name: /log in/i })).toBeDisabled();
 
-    // Check if setConfigurations was called with correct data
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("setConfigurations", {
-        baseUrl: "https://example.com",
-        project: "Project A",
-        report: "Report 1",
-        height: "600",
-      });
-    });
+    // Check if reports are set in dropdown
+    expect(screen.getByText("Report 1")).toBeInTheDocument();
+    expect(screen.getByText("Snapshot 1")).toBeInTheDocument();
   });
 });
