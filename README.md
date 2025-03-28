@@ -1,67 +1,88 @@
-it("logs in, sets ticket and baseUrl, disables input, fetches reports and projects, and shows fields", async () => {
-  // Mock `view.getContext` to return no ticket initially
-  view.getContext.mockResolvedValue({ extension: { gadgetConfiguration: {} } });
+const invoke = jest.fn();
 
-  // Mock stored configurations to be fetched after login
-  const mockStoredConfig = {
-    report: { label: "Report 1", value: "1" },
-    project: "Project A",
-    height: "500",
-  };
-  invoke.mockResolvedValueOnce(mockStoredConfig); // Mock getConfigurations call
+const Modal = jest.fn().mockImplementation(() => ({
+  open: jest.fn(),
+  close: jest.fn(),
+  onClose: jest.fn((callback) => {
+    callback("auth_ticket_123"); // Simulate modal returning a ticket
+  }),
+}));
 
-  // Mock stored baseUrl
-  invoke.mockResolvedValueOnce({ payload: "https://example.com" }); // getBaseUrl
+const view = {
+  getContext: jest.fn().mockResolvedValue({
+    extension: { gadgetConfiguration: {} }, // No context initially
+  }),
+};
 
-  // Mock reports list fetched after login
-  const mockReports = [
-    { id: "1", entityName: "Report 1", reportType: "Report" },
-    { id: "2", entityName: "Snapshot 1", reportType: "Snapshot" },
-  ];
-  global.fetch = jest.fn(() =>
-    Promise.resolve({
-      json: () => Promise.resolve({ reportList: { report: mockReports } }),
-    })
-  );
+export { invoke, Modal, view };
 
-  // Mock projects fetched after login
-  const mockProjects = [{ name: "Project A" }, { name: "Project B" }];
-  invoke.mockResolvedValueOnce(mockProjects); // Mock getProjects call
 
-  // Render the component
-  render(<Edit />);
 
-  // Ensure baseUrl is fetched and displayed in input
-  await waitFor(() => expect(screen.getByDisplayValue("https://example.com")).toBeInTheDocument());
+import React from "react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import Edit from "../Edit"; // Adjust the path as needed
+import { invoke, Modal, view } from "@forge/bridge";
 
-  // Click login button to open modal
-  fireEvent.click(screen.getByRole("button", { name: "Login" }));
+// Mock Forge bridge
+jest.mock("@forge/bridge");
 
-  // Simulate modal returning a ticket
-  await act(async () => {
-    Modal.mock.instances[0].onClose("mocked-ticket");
+describe("Edit Component", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
   });
 
-  // Ensure authToken is set and baseUrl is stored
-  await waitFor(() => expect(invoke).toHaveBeenCalledWith("setBaseUrl", "https://example.com"));
+  test("Logs in via modal, sets authToken, disables fields, and fetches reports/projects", async () => {
+    // Mock `invoke` responses
+    invoke.mockImplementation((method, payload) => {
+      switch (method) {
+        case "setBaseUrl":
+          return Promise.resolve();
+        case "getProjects":
+          return Promise.resolve([{ name: "Project A" }, { name: "Project B" }]);
+        case "getConfigurations":
+          return Promise.resolve({
+            report: { label: "Report 1", value: "r1" },
+            project: "Project A",
+            height: "500",
+          });
+        default:
+          return Promise.resolve();
+      }
+    });
 
-  // Ensure input field and login button are disabled
-  expect(screen.getByDisplayValue("https://example.com")).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Login" })).toBeDisabled();
+    render(<Edit />);
 
-  // Ensure reports are fetched and displayed in dropdown
-  await waitFor(() => expect(screen.getByText("Report 1")).toBeInTheDocument());
-  await waitFor(() => expect(screen.getByText("Snapshot 1")).toBeInTheDocument());
+    // Initially, only URL input and login button should be present
+    expect(screen.getByLabelText("eQube-BI URL")).toBeInTheDocument();
+    expect(screen.getByText("Login")).toBeInTheDocument();
+    expect(screen.queryByText("Save")).not.toBeInTheDocument();
 
-  // Ensure projects are fetched and displayed
-  await waitFor(() => expect(screen.getByText("Project A")).toBeInTheDocument());
-  await waitFor(() => expect(screen.getByText("Project B")).toBeInTheDocument());
+    // Enter a Base URL and click login
+    fireEvent.change(screen.getByLabelText("eQube-BI URL"), {
+      target: { value: "https://example.com" },
+    });
 
-  // Ensure default values for report, project, height are set
-  expect(screen.getByText("Report 1")).toBeInTheDocument();
-  expect(screen.getByText("Project A")).toBeInTheDocument();
-  expect(screen.getByDisplayValue("500")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Login"));
 
-  // Ensure save button is shown
-  expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+    // Simulate modal opening and returning a ticket
+    await waitFor(() => {
+      expect(Modal).toHaveBeenCalled();
+      expect(invoke).toHaveBeenCalledWith("setBaseUrl", "https://example.com");
+    });
+
+    // Check that authToken is set and login fields are disabled
+    expect(screen.getByLabelText("eQube-BI URL")).toBeDisabled();
+    expect(screen.queryByText("Login")).not.toBeInTheDocument();
+
+    // Wait for reports and projects to load
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("getProjects");
+      expect(screen.getByText("Report 1")).toBeInTheDocument();
+      expect(screen.getByText("Project A")).toBeInTheDocument();
+    });
+
+    // Ensure height input and save button are present
+    expect(screen.getByLabelText("Height")).toBeInTheDocument();
+    expect(screen.getByText("Save")).toBeInTheDocument();
+  });
 });
