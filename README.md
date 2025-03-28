@@ -1,26 +1,6 @@
-const invoke = jest.fn();
-
-const Modal = jest.fn().mockImplementation(() => ({
-  open: jest.fn(),
-  close: jest.fn(),
-  onClose: jest.fn((callback) => {
-    callback("auth_ticket_123"); // Simulate modal returning a ticket
-  }),
-}));
-
-const view = {
-  getContext: jest.fn().mockResolvedValue({
-    extension: { gadgetConfiguration: {} }, // No context initially
-  }),
-};
-
-export { invoke, Modal, view };
-
-
-
 import React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import Edit from "../Edit"; // Adjust the path as needed
+import Edit from "../Edit"; // Adjust path as needed
 import { invoke, Modal, view } from "@forge/bridge";
 
 // Mock Forge bridge
@@ -31,7 +11,7 @@ describe("Edit Component", () => {
     jest.clearAllMocks();
   });
 
-  test("Logs in via modal, sets authToken, disables fields, and fetches reports/projects", async () => {
+  test("Logs in, sets authToken, fetches reports and projects, and sets default values", async () => {
     // Mock `invoke` responses
     invoke.mockImplementation((method, payload) => {
       switch (method) {
@@ -45,6 +25,11 @@ describe("Edit Component", () => {
             project: "Project A",
             height: "500",
           });
+        case "getReports":
+          return Promise.resolve([
+            { id: "r1", entityName: "Report 1", reportType: "Report" },
+            { id: "s1", entityName: "Snapshot 1", reportType: "Snapshot" },
+          ]);
         default:
           return Promise.resolve();
       }
@@ -77,12 +62,28 @@ describe("Edit Component", () => {
     // Wait for reports and projects to load
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("getProjects");
-      expect(screen.getByText("Report 1")).toBeInTheDocument();
-      expect(screen.getByText("Project A")).toBeInTheDocument();
+      expect(invoke).toHaveBeenCalledWith("getReports");
+      expect(invoke).toHaveBeenCalledWith("getConfigurations");
     });
 
-    // Ensure height input and save button are present
-    expect(screen.getByLabelText("Height")).toBeInTheDocument();
+    // **Verify that reports are shown in the dropdown**
+    expect(screen.getByText("Reports")).toBeInTheDocument(); // Group label
+    expect(screen.getByText("Report 1")).toBeInTheDocument(); // Report fetched
+    expect(screen.getByText("Snapshots")).toBeInTheDocument(); // Group label
+    expect(screen.getByText("Snapshot 1")).toBeInTheDocument(); // Snapshot fetched
+
+    // **Verify that projects are shown in the dropdown**
+    expect(screen.getByText("Project A")).toBeInTheDocument();
+    expect(screen.getByText("Project B")).toBeInTheDocument();
+
+    // **Check that default values are set**
+    await waitFor(() => {
+      expect(screen.getByText("Report 1")).toBeInTheDocument(); // Report default value
+      expect(screen.getByText("Project A")).toBeInTheDocument(); // Project default value
+      expect(screen.getByDisplayValue("500")).toBeInTheDocument(); // Height default value
+    });
+
+    // Ensure Save button appears
     expect(screen.getByText("Save")).toBeInTheDocument();
   });
 });
