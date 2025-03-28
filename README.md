@@ -15,16 +15,18 @@ describe("Edit Component", () => {
     // Mock `invoke` responses
     invoke.mockImplementation((method, payload) => {
       switch (method) {
-        case "setBaseUrl":
-          return Promise.resolve();
-        case "getProjects":
-          return Promise.resolve([{ name: "Project A" }, { name: "Project B" }]);
+        case "getBaseUrl":
+          return Promise.resolve(""); // Simulates no stored baseUrl
         case "getConfigurations":
           return Promise.resolve({
             report: { label: "Report 1", value: "r1" },
             project: "Project A",
             height: "500",
           });
+        case "setBaseUrl":
+          return Promise.resolve();
+        case "getProjects":
+          return Promise.resolve([{ name: "Project A" }, { name: "Project B" }]);
         case "getReports":
           return Promise.resolve([
             { id: "r1", entityName: "Report 1", reportType: "Report" },
@@ -36,6 +38,12 @@ describe("Edit Component", () => {
     });
 
     render(<Edit />);
+
+    // Expect initial calls to getBaseUrl and getConfigurations
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("getBaseUrl");
+      expect(invoke).toHaveBeenCalledWith("getConfigurations");
+    });
 
     // Initially, only URL input and login button should be present
     expect(screen.getByLabelText("eQube-BI URL")).toBeInTheDocument();
@@ -52,6 +60,10 @@ describe("Edit Component", () => {
     // Simulate modal opening and returning a ticket
     await waitFor(() => {
       expect(Modal).toHaveBeenCalled();
+    });
+
+    // Ensure setBaseUrl is called correctly after login
+    await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("setBaseUrl", "https://example.com");
     });
 
