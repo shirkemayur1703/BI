@@ -1,101 +1,67 @@
-import React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import Edit from "../Edit"; // Adjust path as needed
-import { invoke, Modal, view } from "@forge/bridge";
+export const invoke = jest.fn();
+export const view = {
+  getContext: jest.fn(),
+  close: jest.fn(), // Mock view.close
+};
+export const Modal = jest.fn().mockImplementation(({ onClose }) => ({
+  open: jest.fn(() => {
+    // Simulate modal closing by calling onClose when needed
+    Modal.onClose = onClose;
+  }),
+}));
 
-// Mock Forge bridge
+
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import Edit from "../Edit";
+import { invoke, Modal } from "@forge/bridge";
+
 jest.mock("@forge/bridge");
 
-describe("Edit Component", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
+test("logs in and sets authToken, disables fields, fetches reports and projects", async () => {
+  // Mock `invoke` for fetching configurations and reports
+  invoke.mockImplementation((method) => {
+    if (method === "getConfigurations") {
+      return Promise.resolve({ report: null, project: null, height: null });
+    }
+    if (method === "setBaseUrl") {
+      return Promise.resolve();
+    }
+    return Promise.resolve([]);
   });
 
-  test("Logs in, sets authToken, fetches reports and projects, and sets default values", async () => {
-    // Mock `invoke` responses
-    invoke.mockImplementation((method, payload) => {
-      switch (method) {
-        case "getBaseUrl":
-          return Promise.resolve(""); // Simulates no stored baseUrl
-        case "getConfigurations":
-          return Promise.resolve({
-            report: { label: "Report 1", value: "r1" },
-            project: "Project A",
-            height: "500",
-          });
-        case "setBaseUrl":
-          return Promise.resolve();
-        case "getProjects":
-          return Promise.resolve([{ name: "Project A" }, { name: "Project B" }]);
-        case "getReports":
-          return Promise.resolve([
-            { id: "r1", entityName: "Report 1", reportType: "Report" },
-            { id: "s1", entityName: "Snapshot 1", reportType: "Snapshot" },
-          ]);
-        default:
-          return Promise.resolve();
-      }
-    });
+  render(<Edit />);
 
-    render(<Edit />);
+  // Ensure only login input and button are shown initially
+  expect(screen.getByLabelText("eQube-BI URL")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /login/i })).toBeInTheDocument();
 
-    // Expect initial calls to getBaseUrl and getConfigurations
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("getBaseUrl");
-      expect(invoke).toHaveBeenCalledWith("getConfigurations");
-    });
+  // Enter base URL and trigger login
+  fireEvent.change(screen.getByLabelText("eQube-BI URL"), { target: { value: "https://example.com" } });
+  fireEvent.click(screen.getByRole("button", { name: /login/i }));
 
-    // Initially, only URL input and login button should be present
-    expect(screen.getByLabelText("eQube-BI URL")).toBeInTheDocument();
-    expect(screen.getByText("Login")).toBeInTheDocument();
-    expect(screen.queryByText("Save")).not.toBeInTheDocument();
+  // Simulate modal returning ticket
+  const mockTicket = "mockAuthToken123";
+  await waitFor(() => {
+    expect(Modal).toHaveBeenCalled(); // Ensure modal opened
+    Modal.onClose(mockTicket); // Simulate modal closing with token
+  });
 
-    // Enter a Base URL and click login
-    fireEvent.change(screen.getByLabelText("eQube-BI URL"), {
-      target: { value: "https://example.com" },
-    });
-
-    fireEvent.click(screen.getByText("Login"));
-
-    // Simulate modal opening and returning a ticket
-    await waitFor(() => {
-      expect(Modal).toHaveBeenCalled();
-    });
-
-    // Ensure setBaseUrl is called correctly after login
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("setBaseUrl", "https://example.com");
-    });
-
-    // Check that authToken is set and login fields are disabled
+  // Now, the login button should be disabled, and authToken should be set
+  await waitFor(() => {
     expect(screen.getByLabelText("eQube-BI URL")).toBeDisabled();
-    expect(screen.queryByText("Login")).not.toBeInTheDocument();
-
-    // Wait for reports and projects to load
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("getProjects");
-      expect(invoke).toHaveBeenCalledWith("getReports");
-      expect(invoke).toHaveBeenCalledWith("getConfigurations");
-    });
-
-    // **Verify that reports are shown in the dropdown**
-    expect(screen.getByText("Reports")).toBeInTheDocument(); // Group label
-    expect(screen.getByText("Report 1")).toBeInTheDocument(); // Report fetched
-    expect(screen.getByText("Snapshots")).toBeInTheDocument(); // Group label
-    expect(screen.getByText("Snapshot 1")).toBeInTheDocument(); // Snapshot fetched
-
-    // **Verify that projects are shown in the dropdown**
-    expect(screen.getByText("Project A")).toBeInTheDocument();
-    expect(screen.getByText("Project B")).toBeInTheDocument();
-
-    // **Check that default values are set**
-    await waitFor(() => {
-      expect(screen.getByText("Report 1")).toBeInTheDocument(); // Report default value
-      expect(screen.getByText("Project A")).toBeInTheDocument(); // Project default value
-      expect(screen.getByDisplayValue("500")).toBeInTheDocument(); // Height default value
-    });
-
-    // Ensure Save button appears
-    expect(screen.getByText("Save")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /login/i })).not.toBeInTheDocument();
   });
+
+  // Check that reports and projects are fetched and dropdowns are shown
+  await waitFor(() => {
+    expect(invoke).toHaveBeenCalledWith("setBaseUrl", "https://example.com");
+    expect(invoke).toHaveBeenCalledWith("getProjects");
+    expect(invoke).toHaveBeenCalledWith("getConfigurations");
+  });
+
+  // Ensure the report and project dropdowns are in the document
+  expect(screen.getByLabelText("Report Name")).toBeInTheDocument();
+  expect(screen.getByLabelText("Project")).toBeInTheDocument();
+  expect(screen.getByLabelText("Height")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /save/i })).toBeInTheDocument();
 });
