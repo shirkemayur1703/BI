@@ -6,44 +6,45 @@ export function __define(fname, cb) { callbacks[fname] = cb; }
 
 export function __reset() { callbacks = {}; }
 
-var viewContextMock = {};
+// Mock for view.getContext var context = {};
 
-export async function getContext() { return viewContextMock; }
+export const view = { async getContext() { return context; }, };
 
-export function __setContext(context) { viewContextMock = context; }
+export function __setContext(ctx) { context = ctx; }
 
-export function __resetContext() { viewContextMock = {}; }
-
-/**
-
-These tests verify that the resolver mock works as expected */
+export function __resetContext() { context = {}; }
 
 
-import { invoke, __define, __reset } from "@forge/bridge"; import { getContext, __setContext, __resetContext } from "@forge/bridge"; import { beforeEach, expect } from "@jest/globals"; jest.mock("@forge/bridge");
+import React from "react"; import { render, screen, waitFor } from "@testing-library/react"; import Edit from "../Edit"; import { invoke, __define, __reset } from "@forge/bridge"; import { view, __setContext, __resetContext } from "@forge/bridge"; jest.mock("@forge/bridge");
 
-describe("bridge api", () => { beforeEach(() => { __reset(); });
+describe("Edit component - Initial Scenario", () => { beforeEach(() => { __reset(); __resetContext(); });
 
-test("invokes a defined function", async () => { const testerCb = jest.fn().mockResolvedValue("helloWorld"); __define("tester", testerCb); const payload = { name: "joe", year: 1942 }; const result = await invoke("tester", payload); expect(testerCb).toHaveBeenCalledWith(payload); expect(result).toEqual("helloWorld"); });
+test("displays only baseUrl input and login button when context is empty", async () => { // Mock getBaseUrl to return "https://example.com" __define("getBaseUrl", jest.fn().mockResolvedValue({ payload: "https://example.com" }));
 
-test("handles multiple functions", async () => { const f1 = jest.fn().mockResolvedValue("f1Value"); __define("f1", f1);
+// Mock view.getContext to return an empty gadgetConfiguration
+__setContext({ extension: { gadgetConfiguration: {} } });
 
-const f2 = jest.fn().mockResolvedValue("f2Value");
-__define("f2", f2);
+render(<Edit />);
 
-const payload = { name: "joe", year: 1942 };
-const result1 = await invoke("f1", payload);
-expect(f1).toHaveBeenCalledWith(payload);
-expect(result1).toEqual("f1Value");
+// Wait for baseUrl to be populated
+await waitFor(() => {
+  expect(screen.getByLabelText("eQube-BI URL")).toHaveValue("https://example.com");
+});
 
-const result2 = await invoke("f2", payload);
-expect(f2).toHaveBeenCalledWith(payload);
-expect(result2).toEqual("f2Value");
+// Ensure getBaseUrl was called
+expect(invoke).toHaveBeenCalledWith("getBaseUrl");
+
+// Ensure view.getContext was called and gadgetConfiguration is empty
+await waitFor(async () => {
+  const ctx = await view.getContext();
+  expect(ctx.extension.gadgetConfiguration).toEqual({});
+});
+
+// Ensure authToken is NOT set (i.e., Login button should be visible)
+expect(screen.getByText("Login")).toBeInTheDocument();
 
 }); });
 
-describe("view.getContext mock", () => { beforeEach(() => { __resetContext(); });
 
-test("returns the set context", async () => { const testContext = { extension: { gadgetConfiguration: { key: "value" } } }; __setContext(testContext); const result = await getContext(); expect(result).toEqual(testContext); });
 
-test("returns empty object by default", async () => { const result = await getContext(); expect(result).toEqual({}); }); });
 
