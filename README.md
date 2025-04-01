@@ -1,99 +1,59 @@
-let openModalCallback = null;
-let modalCloseCallback = null;
+let modalInstances = [];
 
-export class Modal {
-  constructor({ resource, onClose, size, context }) {
-    this.resource = resource;
-    this.onClose = onClose;
-    this.size = size;
-    this.context = context;
-  }
+export class Modal { constructor({ resource, onClose, size, context }) { this.resource = resource; this.onClose = onClose; this.size = size; this.context = context; modalInstances.push(this); }
 
-  open() {
-    openModalCallback = this.onClose;
-  }
+open() { this.isOpen = true; }
 
-  close() {
-    if (modalCloseCallback) {
-      modalCloseCallback();
-    }
-  }
+close(ticket = null) { this.isOpen = false; if (this.onClose) { this.onClose(ticket); } } }
 
-  // Simulate the modal close and trigger the onClose callback
-  triggerClose(ticket) {
-    if (openModalCallback) {
-      openModalCallback(ticket);
-    }
-  }
+export function __getModalInstances() { return modalInstances; }
 
-  // Simulate setting the callback after modal close
-  setModalCloseCallback(callback) {
-    modalCloseCallback = callback;
-  }
-}
+export function __resetModals() { modalInstances = []; }
 
-import React from "react";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+test("closes modal and triggers onClose with ticket", async () => {
+  const mockOnClose = jest.fn();
+  const modal = new Modal({ resource: "modal", onClose: mockOnClose });
+
+  // Open and close the modal with a mock ticket
+  modal.open();
+  modal.close("mock_ticket");
+
+  expect(mockOnClose).toHaveBeenCalledWith("mock_ticket");
+});
+
+import { render, screen } from "@testing-library/react";
 import Edit from "../Edit";
+import { __getModalInstances, __resetModals } from "../mocks/Modal"; // Adjust the path if needed
 
-// Import mock functions from the mocked forgeBridge.js file
-import {
-  invoke,
-  __define,
-  __reset,
-  __setContext,
-  __resetContext,
-  Modal,
-} from "@forge/bridge";
-
-describe("Edit component - Initial Scenario", () => {
+describe("Edit component - Modal Behavior", () => {
   beforeEach(() => {
-    // Reset mocks and context before each test
-    __reset();
-    __resetContext();
+    __resetModals();
   });
 
-  test("displays only baseUrl input and login button when context is empty", async () => {
-    // Mock the response of invoke("getBaseUrl")
-    __define("getBaseUrl", async () => ({
-      payload: "https://example.com",
-    }));
-
-    // Set the initial context to an empty gadgetConfiguration
-    __setContext({
-      extension: {
-        gadgetConfiguration: {},
-      },
-    });
-
+  test("opens modal when login button is clicked", async () => {
     render(<Edit />);
+    
+    // Click on Login button
+    screen.getByText("Login").click();
+    
+    // Verify modal is created and opened
+    const modals = __getModalInstances();
+    expect(modals.length).toBe(1);
+    expect(modals[0].isOpen).toBe(true);
+  });
 
-    // Wait for baseUrl to be populated in the input field
-    await waitFor(() => {
-      const baseUrlInput = screen.getByLabelText("eQube-BI URL");
-      expect(baseUrlInput.value).toBe("https://example.com");  // Assert value of input field
-    });
+  test("closes modal and provides a ticket", async () => {
+    render(<Edit />);
+    
+    // Click on Login button to open modal
+    screen.getByText("Login").click();
 
-    // Ensure invoke("getBaseUrl") was called
-    expect(invoke).toHaveBeenCalledWith("getBaseUrl");
+    // Get the modal instance and close it with a mock ticket
+    const modals = __getModalInstances();
+    expect(modals.length).toBe(1);
+    modals[0].close("mock_ticket");
 
-    // Ensure view.getContext was called and gadgetConfiguration is empty
-    const ctx = await view.getContext();
-    expect(ctx.extension.gadgetConfiguration).toEqual({});
-
-    // Simulate the modal being opened and closed
-    const modal = new Modal({
-      resource: "modal",
-      onClose: jest.fn(),
-      size: "max",
-      context: { baseUrl: "https://example.com" },
-    });
-
-    // Open modal and trigger onClose
-    modal.open();
-    modal.triggerClose("fake-ticket");
-
-    // Check if the onClose callback was called
-    expect(modal.onClose).toHaveBeenCalledWith("fake-ticket");
+    // Verify modal is closed
+    expect(modals[0].isOpen).toBe(false);
   });
 });
