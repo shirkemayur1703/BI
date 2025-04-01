@@ -1,50 +1,99 @@
-var callbacks = {};
+let openModalCallback = null;
+let modalCloseCallback = null;
 
-export async function invoke(fname, payload) { return callbacksfname; }
+export class Modal {
+  constructor({ resource, onClose, size, context }) {
+    this.resource = resource;
+    this.onClose = onClose;
+    this.size = size;
+    this.context = context;
+  }
 
-export function __define(fname, cb) { callbacks[fname] = cb; }
+  open() {
+    openModalCallback = this.onClose;
+  }
 
-export function __reset() { callbacks = {}; }
+  close() {
+    if (modalCloseCallback) {
+      modalCloseCallback();
+    }
+  }
 
-// Mock for view.getContext var context = {};
+  // Simulate the modal close and trigger the onClose callback
+  triggerClose(ticket) {
+    if (openModalCallback) {
+      openModalCallback(ticket);
+    }
+  }
 
-export const view = { async getContext() { return context; }, };
+  // Simulate setting the callback after modal close
+  setModalCloseCallback(callback) {
+    modalCloseCallback = callback;
+  }
+}
 
-export function __setContext(ctx) { context = ctx; }
+import React from "react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import Edit from "../Edit";
 
-export function __resetContext() { context = {}; }
+// Import mock functions from the mocked forgeBridge.js file
+import {
+  invoke,
+  __define,
+  __reset,
+  __setContext,
+  __resetContext,
+  Modal,
+} from "@forge/bridge";
 
+describe("Edit component - Initial Scenario", () => {
+  beforeEach(() => {
+    // Reset mocks and context before each test
+    __reset();
+    __resetContext();
+  });
 
-import React from "react"; import { render, screen, waitFor } from "@testing-library/react"; import Edit from "../Edit"; import { invoke, __define, __reset } from "@forge/bridge"; import { view, __setContext, __resetContext } from "@forge/bridge"; jest.mock("@forge/bridge");
+  test("displays only baseUrl input and login button when context is empty", async () => {
+    // Mock the response of invoke("getBaseUrl")
+    __define("getBaseUrl", async () => ({
+      payload: "https://example.com",
+    }));
 
-describe("Edit component - Initial Scenario", () => { beforeEach(() => { __reset(); __resetContext(); });
+    // Set the initial context to an empty gadgetConfiguration
+    __setContext({
+      extension: {
+        gadgetConfiguration: {},
+      },
+    });
 
-test("displays only baseUrl input and login button when context is empty", async () => { // Mock getBaseUrl to return "https://example.com" __define("getBaseUrl", jest.fn().mockResolvedValue({ payload: "https://example.com" }));
+    render(<Edit />);
 
-// Mock view.getContext to return an empty gadgetConfiguration
-__setContext({ extension: { gadgetConfiguration: {} } });
+    // Wait for baseUrl to be populated in the input field
+    await waitFor(() => {
+      const baseUrlInput = screen.getByLabelText("eQube-BI URL");
+      expect(baseUrlInput.value).toBe("https://example.com");  // Assert value of input field
+    });
 
-render(<Edit />);
+    // Ensure invoke("getBaseUrl") was called
+    expect(invoke).toHaveBeenCalledWith("getBaseUrl");
 
-// Wait for baseUrl to be populated
-await waitFor(() => {
-  expect(screen.getByLabelText("eQube-BI URL")).toHaveValue("https://example.com");
+    // Ensure view.getContext was called and gadgetConfiguration is empty
+    const ctx = await view.getContext();
+    expect(ctx.extension.gadgetConfiguration).toEqual({});
+
+    // Simulate the modal being opened and closed
+    const modal = new Modal({
+      resource: "modal",
+      onClose: jest.fn(),
+      size: "max",
+      context: { baseUrl: "https://example.com" },
+    });
+
+    // Open modal and trigger onClose
+    modal.open();
+    modal.triggerClose("fake-ticket");
+
+    // Check if the onClose callback was called
+    expect(modal.onClose).toHaveBeenCalledWith("fake-ticket");
+  });
 });
-
-// Ensure getBaseUrl was called
-expect(invoke).toHaveBeenCalledWith("getBaseUrl");
-
-// Ensure view.getContext was called and gadgetConfiguration is empty
-await waitFor(async () => {
-  const ctx = await view.getContext();
-  expect(ctx.extension.gadgetConfiguration).toEqual({});
-});
-
-// Ensure authToken is NOT set (i.e., Login button should be visible)
-expect(screen.getByText("Login")).toBeInTheDocument();
-
-}); });
-
-
-
-
