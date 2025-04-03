@@ -1,6 +1,6 @@
 const handleLogin = async (formData) => {
   const { inputUrl } = formData;
-  
+
   if (baseUrl === inputUrl && authToken) {
     setFieldDisabled(true);
     setButtonDisabled(true);
@@ -12,20 +12,25 @@ const handleLogin = async (formData) => {
     onClose: async (ticket) => {
       if (ticket) {
         try {
-          // Logout the previous session
+          // Logout previous session only if authToken exists
           if (authToken && baseUrl) {
-            await fetch(`${baseUrl}/serviceLogout?ticket=${authToken}`, {
+            const logoutUrl = `${baseUrl}/serviceLogout?ticket=${authToken}`;
+            const response = await fetch(logoutUrl, {
               method: "GET",
               credentials: "include",
             });
+
+            if (!response.ok) {
+              console.warn("Logout failed:", response.statusText);
+            }
           }
 
-          // Set new authToken and baseUrl
+          // Proceed with setting the new session
           setAuthToken(ticket);
           setFieldDisabled(true);
           setButtonDisabled(true);
-          getReportList(inputUrl, ticket);
-          getProjectList();
+          await getReportList(inputUrl, ticket);
+          await getProjectList();
           setBaseUrl(inputUrl);
           await invoke("setBaseUrl", inputUrl);
         } catch (error) {
