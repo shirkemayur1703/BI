@@ -73,3 +73,50 @@ const { currentUrl, authToken } = await invoke('getSecureConfigurations', { gadg
 
 // Use currentUrl and authToken as needed
 
+
+
+
+
+
+// Get the configurations for a given gadgetId
+resolver.define('getConfigurations', async ({ payload }) => {
+  const { gadgetId } = payload;
+  const config = await storage.entity('gadgetConfigs').get(gadgetId);
+  return config || {}; // Return empty object if no config is found
+});
+
+// Set the configurations for a given gadgetId and baseUrl
+resolver.define('setConfigurations', async ({ payload }) => {
+  const { gadgetId, baseUrl, config } = payload;
+
+  // Fetch the existing configurations for the gadgetId, or initialize an empty object
+  const existingConfig = await storage.entity('gadgetConfigs').get(gadgetId) || {};
+
+  // Store the new config under the specific baseUrl
+  existingConfig[baseUrl] = config;
+
+  // Save the updated configurations for the gadgetId
+  await storage.entity('gadgetConfigs').set(gadgetId, existingConfig);
+
+  return { success: true }; // Return success status
+});
+
+
+
+
+
+await invoke('setConfigurations', {
+  gadgetId,
+  baseUrl: 'https://bi.mycompany.com', // Example baseUrl
+  config: {
+    report: { label: 'Sales Report', value: 'sales-report-id' }, // Report as an object with label and value
+    project: 'Project A', // Project as a single value
+    height: 600 // Height as a single value
+  }
+});
+
+const config = await invoke('getConfigurations', { gadgetId });
+const configForBaseUrl = config?.[baseUrl];
+
+// Now you can access configForBaseUrl which will contain:
+// { report, project, height }
