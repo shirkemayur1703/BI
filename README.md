@@ -1,48 +1,75 @@
-const handleLogin = async (formData) => {
-  const { inputUrl } = formData;
+resolver.define('getConfigurations', async ({ payload }) => {
+  const { gadgetId } = payload;
+  const config = await storage.entity('gadgetConfigs').get(gadgetId);
+  return config || {};
+});
 
-  if (baseUrl === inputUrl && authToken) {
-    setFieldDisabled(true);
-    setButtonDisabled(true);
-    return;
+resolver.define('setConfigurations', async ({ payload }) => {
+  const { gadgetId, baseUrl, config } = payload;
+
+  const existingConfig = await storage.entity('gadgetConfigs').get(gadgetId) || {};
+  existingConfig[baseUrl] = config;
+
+  await storage.entity('gadgetConfigs').set(gadgetId, existingConfig);
+
+  return { success: true };
+});
+
+
+const config = await invoke('getConfigurations', { gadgetId });
+const configForBaseUrl = config?.[baseUrl];
+
+
+
+await invoke('setConfigurations', {
+  gadgetId,
+  baseUrl,
+  config: {
+    authToken: 'your-token',
+    selectedReport: 'sales-overview',
+    selectedProject: 'Project A'
+  }
+});
+
+
+resolver.define('setSecureConfigurations', async ({ payload }) => {
+  const { gadgetId, currentUrl, authToken } = payload;
+
+  // Create an object with both values
+  const configObject = {
+    currentUrl,
+    authToken
+  };
+
+  // Store the object in secureStorage
+  await storage.secure.set(`gadget-${gadgetId}-config`, configObject);
+
+  return { success: true };
+});
+
+
+
+resolver.define('getSecureConfigurations', async ({ payload }) => {
+  const { gadgetId } = payload;
+
+  // Retrieve the object from secureStorage
+  const configObject = await storage.secure.get(`gadget-${gadgetId}-config`);
+
+  if (!configObject) {
+    return { error: 'Configuration not found' };
   }
 
-  const modal = new Modal({
-    resource: "modal",
-    onClose: async (ticket) => {
-      if (ticket) {
-        try {
-          // Logout previous session only if authToken exists
-          if (authToken && baseUrl) {
-            const logoutUrl = `${baseUrl}/serviceLogout?ticket=${authToken}`;
-            const response = await fetch(logoutUrl, {
-              method: "GET",
-              credentials: "include",
-            });
+  return configObject; // This will return { currentUrl, authToken }
+});
 
-            if (!response.ok) {
-              console.warn("Logout failed:", response.statusText);
-            }
-          }
 
-          // Proceed with setting the new session
-          setAuthToken(ticket);
-          setFieldDisabled(true);
-          setButtonDisabled(true);
-          await getReportList(inputUrl, ticket);
-          await getProjectList();
-          setBaseUrl(inputUrl);
-          await invoke("setBaseUrl", inputUrl);
-        } catch (error) {
-          console.error("Error logging out previous session:", error);
-        }
-      } else {
-        console.log("Modal closed without ticket");
-      }
-    },
-    size: "max",
-    context: { baseUrl: inputUrl },
-  });
+await invoke('setSecureConfigurations', {
+  gadgetId,
+  currentUrl: 'https://bi.mycompany.com',
+  authToken: 'xyz123'
+});
 
-  modal.open();
-};
+const { currentUrl, authToken } = await invoke('getSecureConfigurations', { gadgetId });
+
+// Use currentUrl and authToken as needed
+
