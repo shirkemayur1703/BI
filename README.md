@@ -1,14 +1,2 @@
-const existingConfig = await storage.get(gadgetId) || {};
-existingConfig[baseUrl] = {
-  report: {
-    label: 'New Report',
-    value: 'report-2'
-  },
-  project: 'Project B',
-  height: 500
-};
-
-await storage.set(gadgetId, existingConfig);
-
-const config = await storage.get(gadgetId);
-const configForBaseUrl = config?.[baseUrl];
+https://*.cdn.prod.atlassian-dev.net/*/modal/_hostname_1eqdev.atlassian.net/*
+https://*.cdn.prod.atlassian-dev.net/*/main-app/_hostname_1eqdev.atlassian.net/*
