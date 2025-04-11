@@ -10,13 +10,12 @@
 
     <build>
         <plugins>
+            <!-- Frontend build tasks -->
             <plugin>
                 <groupId>com.github.eirslett</groupId>
                 <artifactId>frontend-maven-plugin</artifactId>
                 <version>1.12.0</version>
-
                 <executions>
-
                     <!-- Install Node and npm -->
                     <execution>
                         <id>install-node-and-npm</id>
@@ -29,7 +28,7 @@
                         </configuration>
                     </execution>
 
-                    <!-- Install root dependencies (jiraforge) -->
+                    <!-- Install root dependencies -->
                     <execution>
                         <id>npm-install-root</id>
                         <goals>
@@ -42,7 +41,7 @@
                         </configuration>
                     </execution>
 
-                    <!-- Install main-app dependencies -->
+                    <!-- Install and build main-app -->
                     <execution>
                         <id>npm-install-main-app</id>
                         <goals>
@@ -54,8 +53,6 @@
                             <arguments>install</arguments>
                         </configuration>
                     </execution>
-
-                    <!-- Build main-app -->
                     <execution>
                         <id>npm-build-main-app</id>
                         <goals>
@@ -68,7 +65,7 @@
                         </configuration>
                     </execution>
 
-                    <!-- Install modal-app dependencies -->
+                    <!-- Install and build modal-app -->
                     <execution>
                         <id>npm-install-modal-app</id>
                         <goals>
@@ -80,8 +77,6 @@
                             <arguments>install</arguments>
                         </configuration>
                     </execution>
-
-                    <!-- Build modal-app -->
                     <execution>
                         <id>npm-build-modal-app</id>
                         <goals>
@@ -94,7 +89,7 @@
                         </configuration>
                     </execution>
 
-                    <!-- Optional: Run tests -->
+                    <!-- Run Jest tests -->
                     <execution>
                         <id>run-tests</id>
                         <goals>
@@ -103,10 +98,46 @@
                         <phase>test</phase>
                         <configuration>
                             <workingDirectory>src/main/forge/jiraforge</workingDirectory>
-                            <arguments>run test</arguments> <!-- Adjust based on test script -->
+                            <arguments>run test</arguments>
                         </configuration>
                     </execution>
+                </executions>
+            </plugin>
 
+            <!-- Resource packaging -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-static-react-builds</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/forge-dist</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.basedir}/src/main/forge/jiraforge/main-app/build</directory>
+                                    <targetPath>static/main-app</targetPath>
+                                </resource>
+                                <resource>
+                                    <directory>${project.basedir}/src/main/forge/jiraforge/modal-app/build</directory>
+                                    <targetPath>static/modal-app</targetPath>
+                                </resource>
+                                <resource>
+                                    <directory>${project.basedir}/src/main/forge/jiraforge</directory>
+                                    <includes>
+                                        <include>index.js</include>
+                                        <include>manifest.yml</include>
+                                    </includes>
+                                    <filtering>false</filtering>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>
